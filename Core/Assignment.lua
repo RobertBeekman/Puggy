@@ -2,6 +2,7 @@
 Puggy.Assignments = {}
 
 function Puggy:CreateAssignment(raidId, bossId, templateId, assignments)
+    self:Debug("Creating assignment for Boss %s", tostring(bossId))
     local assignment = {
         id = GetTime(), -- Temporary ID
         raidId = raidId,
@@ -12,6 +13,13 @@ function Puggy:CreateAssignment(raidId, bossId, templateId, assignments)
     }
     
     table.insert(self.db.profile.assignments, assignment)
+    
+    -- Update assignment counts in Roster
+    if self.UpdateAssignmentCountFromAll then
+        self:UpdateAssignmentCountFromAll()
+    end
+
+    self:Debug("Assignment created with ID %s. Notifying modules.", tostring(assignment.id))
     self:SendMessage("PUGGY_ASSIGNMENT_CREATED", assignment)
     return assignment
 end

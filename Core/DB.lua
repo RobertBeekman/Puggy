@@ -4,6 +4,7 @@ local defaults = {
         modules = {},
         assignments = {},
         roster = {},
+        debug = false,
         ui = {
             minimap = {
                 hide = false,
