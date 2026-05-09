@@ -1,4 +1,12 @@
-﻿--- Puggy Core Initialization
+﻿local addOnName = ...
+
+assert(LibStub, "Puggy requires LibStub")
+assert(LibStub:GetLibrary("LibClassicInspector", true), "Puggy requires LibClassicInspector")
+assert(LibStub:GetLibrary("LibDetours-1.0", true), "Puggy requires LibDetours-1.0")
+
+local CI = LibStub("LibClassicInspector")
+
+--- Puggy Core Initialization
 Puggy = LibStub("AceAddon-3.0"):NewAddon("Puggy", "AceConsole-3.0", "AceEvent-3.0", "AceComm-3.0", "AceTimer-3.0")
 
 function Puggy:OnInitialize()
@@ -20,6 +28,13 @@ function Puggy:OnInitialize()
     
     self:RegisterChatCommand("puggy", "ChatCommand")
     self:Print("Puggy Initialized.")
+    
+    CI.RegisterCallback(addOnName, "INVENTORY_READY", function(event, guid, isInspect, unit)
+        self:OnInspectorInventoryReady(guid)
+    end)
+    CI.RegisterCallback(addOnName, "TALENTS_READY", function(event, guid, isInspect, unit)
+        self:OnInspectorTalentsReady(guid)
+    end)
 end
 
 function Puggy:ChatCommand(input)
@@ -67,9 +82,13 @@ function Puggy:DumpRoster()
     local count = 0
     for name, data in pairs(self.Roster) do
         count = count + 1
-        self:Printf("%d. %s (%s) | Role: %s | Spec: %s | Online: %s | Ass: %d", 
-            count, name, data.class or "UNK", data.role or "NONE", data.spec or "UNK", 
-            data.online and "Yes" or "No", data.assignmentCount or 0)
+        local specStr = data.spec or "UNK"
+        if data.talentPoints then
+            specStr = string.format("%s (%s)", specStr, data.talentPoints)
+        end
+        self:Printf("%d. %s (%s) | Role: %s | Spec: %s | GS: %d | Online: %s | Ass: %d", 
+            count, name, data.class or "UNK", data.role or "NONE", specStr, 
+            data.gearScore or 0, data.online and "Yes" or "No", data.assignmentCount or 0)
     end
     if count == 0 then
         self:Print("Roster is empty.")

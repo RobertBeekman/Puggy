@@ -56,4 +56,10 @@
 
     <!-- LibSerialize -->
     <Script file="Lib\LibSerialize\LibSerialize.lua"/>
+
+    <!-- LibDetours -->
+    <Script file="Lib\LibDetours-1.0\LibDetours-1.0.lua"/>
+
+    <!-- LibClassicInspector -->
+    <Script file="Lib\LibClassicInspector\LibClassicInspector.lua"/>
 </Ui>

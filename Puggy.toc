@@ -8,6 +8,9 @@
 # Libraries
 embeds.xml
 
+# Gearscore
+gearscore.lua
+
 # Core
 Core\Init.lua
 Core\Constants.lua

@@ -5,12 +5,18 @@ Puggy.RosterOverrides = {
     specs = {}, -- name -> spec
 }
 
+assert(LibStub, "Puggy requires LibStub")
+assert(LibStub:GetLibrary("LibClassicInspector", true), "Puggy requires LibClassicInspector")
+assert(LibStub:GetLibrary("LibDetours-1.0", true), "Puggy requires LibDetours-1.0")
+
+local CI = LibStub("LibClassicInspector")
+
 function Puggy:EnableRoster()
     self:RegisterEvent("GROUP_ROSTER_UPDATE", "OnRosterUpdate")
     self:RegisterEvent("UNIT_CONNECTION", "OnRosterUpdate") -- Handle disconnects
     self:RegisterEvent("UNIT_FLAGS", "OnRosterUpdate")      -- Handle status changes
     self:RegisterEvent("PLAYER_ENTERING_WORLD", "UpdateRoster")
-    
+
     -- Load overrides from DB if they exist
     if self.db.profile.rosterOverrides then
         self.RosterOverrides = self.db.profile.rosterOverrides
@@ -36,8 +42,10 @@ function Puggy:UpdateRoster()
         for i = 1, 40 do
             local name, _, subgroup, _, _, fileName, _, online, _, raidRole, _, combatRole = GetRaidRosterInfo(i)
             if name then
-                self:Debug("Found raid member at index %d: %s", i, name)
-                self:AddRosterMember(newRoster, name, fileName, subgroup, online, combatRole, raidRole)
+                local unit = "raid"..i
+                local guid = UnitGUID(unit)
+                self:Debug("Found raid member at index %d: %s (GUID: %s)", i, name, tostring(guid))
+                self:AddRosterMember(newRoster, name, fileName, subgroup, online, combatRole, raidRole, guid)
             end
         end
     elseif IsInGroup() then
@@ -51,8 +59,9 @@ function Puggy:UpdateRoster()
                 local _, fileName = UnitClass(unit)
                 local online = UnitIsConnected(unit)
                 local combatRole = UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit) or "NONE"
-                self:Debug("Found party member: %s (unit: %s)", name, unit)
-                self:AddRosterMember(newRoster, name, fileName, 1, online, combatRole, nil)
+                local guid = UnitGUID(unit)
+                self:Debug("Found party member: %s (unit: %s, GUID: %s)", name, unit, tostring(guid))
+                self:AddRosterMember(newRoster, name, fileName, 1, online, combatRole, nil, guid)
             end
         end
     else
@@ -62,7 +71,8 @@ function Puggy:UpdateRoster()
         if name then
             if server and server ~= "" then name = name .. "-" .. server end
             local _, fileName = UnitClass("player")
-            self:AddRosterMember(newRoster, name, fileName, 1, true, "NONE", nil)
+            local guid = UnitGUID("player")
+            self:AddRosterMember(newRoster, name, fileName, 1, true, "NONE", nil, guid)
         end
     end
     
@@ -71,25 +81,44 @@ function Puggy:UpdateRoster()
     self:SendMessage("PUGGY_ROSTER_UPDATED", self.Roster)
 end
 
-function Puggy:AddRosterMember(roster, name, fileName, group, online, combatRole, raidRole)
+function Puggy:AddRosterMember(roster, name, fileName, group, online, combatRole, raidRole, guid)
     -- Get existing data to preserve assignment counts and other transient data
     local existing = self.Roster[name]
     
     local role = self.RosterOverrides.roles[name] or self:DetectRole(fileName, name, combatRole, raidRole)
-    local spec = self.RosterOverrides.specs[name] or "Unknown"
+    local spec = self.RosterOverrides.specs[name] or (existing and existing.spec) or "Unknown"
+    local talentPoints = (existing and existing.talentPoints)
+    local gearScore = (existing and existing.gearScore) or 0
+    local avgItemLevel = (existing and existing.avgItemLevel) or 0
     
-    self:Debug("Processing member: %s (Class: %s, Role: %s, Online: %s)", name, fileName or "UNK", role, tostring(online))
+    self:Debug("Processing member: %s (Class: %s, Role: %s, Online: %s, GUID: %s)", name, fileName or "UNK", role, tostring(online), tostring(guid))
 
     local playerData = {
         name = name,
+        guid = guid,
         class = fileName,
         group = group or 1,
         role = role,
         spec = spec,
+        talentPoints = talentPoints,
+        gearScore = gearScore,
+        avgItemLevel = avgItemLevel,
         online = (online == 1 or online == true),
         assignmentCount = existing and existing.assignmentCount or 0,
     }
     roster[name] = playerData
+
+    if playerData.online then
+        local updated = self:RefreshPlayerFromCache(playerData)
+        if updated then
+            self:Debug("Populated data from cache for %s", name)
+        end
+
+        -- Trigger inspection if data is still missing
+        if playerData.spec == "Unknown" or playerData.gearScore == 0 then
+            CI:DoInspect(guid or name)
+        end
+    end
 end
 
 function Puggy:DetectRole(class, name, combatRole, raidRole)
@@ -189,4 +218,82 @@ function Puggy:RemovePlayer(name)
         self.Roster[name] = nil
         self:SendMessage("PUGGY_ROSTER_UPDATED", self.Roster)
     end
+end
+
+--- LibClassicInspector Handlers
+
+function Puggy:OnInspectorInventoryReady(guid)
+    self:Debug("OnInspectorInventoryReady for %s", guid)
+    if self:UpdatePlayerFromCache(guid) then
+        self:SendMessage("PUGGY_ROSTER_UPDATED", self.Roster)
+    end
+end
+
+function Puggy:OnGearScoreItemsLoaded(guid)
+    self:OnInspectorInventoryReady(guid)
+end
+
+function Puggy:OnInspectorTalentsReady(guid)
+    self:Debug("OnInspectorTalentsReady for %s", guid)
+    if self:UpdatePlayerFromCache(guid) then
+        self:SendMessage("PUGGY_ROSTER_UPDATED", self.Roster)
+    end
+end
+
+function Puggy:UpdatePlayerFromCache(guid)
+    local player = self:GetPlayerByGUID(guid)
+    if player then
+        return self:RefreshPlayerFromCache(player)
+    end
+    return false
+end
+
+function Puggy:RefreshPlayerFromCache(player)
+    if not player or not player.guid then return false end
+    local guid = player.guid
+    local updated = false
+
+    -- GearScore
+    local gearScore, avgItemLevel = TT_GS:GetScore(guid, true)
+    if gearScore > 0 then
+        if player.gearScore ~= gearScore or player.avgItemLevel ~= avgItemLevel then
+            player.gearScore = gearScore
+            player.avgItemLevel = avgItemLevel
+            updated = true
+        end
+    end
+
+    -- Talents/Spec
+    local specIndex = CI:GetSpecialization(guid)
+    if specIndex then
+        local _, englishClass = GetPlayerInfoByGUID(guid)
+        local specName = CI:GetSpecializationName(englishClass or player.class, specIndex, true)
+        if specName and player.spec ~= specName then
+            player.spec = specName
+            updated = true
+        end
+        
+        local p1, p2, p3 = CI:GetTalentPoints(guid)
+        if p1 then
+            local talentPoints = string.format("%d/%d/%d", p1, p2, p3)
+            if player.talentPoints ~= talentPoints then
+                player.talentPoints = talentPoints
+                updated = true
+            end
+        end
+    end
+
+    return updated
+end
+
+function Puggy:GetPlayerByGUID(guid)
+    if not guid then return nil end
+    for _, player in pairs(self.Roster) do
+        if player.guid == guid then
+            return player
+        end
+    end
+    -- Fallback to name-based lookup if GUID is missing in roster but available via API
+    local name = select(6, GetPlayerInfoByGUID(guid))
+    return name and self.Roster[name]
 end

@@ -9,5 +9,6 @@ Puggy.Constants = {
     EXPANSIONS = {
         VANILLA = 1,
         TBC = 2,
+        WOTLK = 3,
     }
 }
