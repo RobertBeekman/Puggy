@@ -1,0 +1,22 @@
+﻿## Interface: 20505
+## Title: Puggy
+## Notes: WoW TBC Anniversary raid planning and management addon.
+## Author: Fumita
+## Version: 1.0.0
+## SavedVariables: PuggyDB
+
+# Libraries
+embeds.xml
+
+# Core
+Core\Init.lua
+Core\Constants.lua
+Core\DB.lua
+Core\ModuleSystem.lua
+Core\Comm.lua
+Core\Roster.lua
+Core\Assignment.lua
+
+# Modules
+Modules\TBC\Init.lua
+Modules\TBC\Data\Raids.lua
